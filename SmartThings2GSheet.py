@@ -21,6 +21,7 @@ import json
 import requests
 import urllib3
 import datetime
+import os
 
 scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
          "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
@@ -141,7 +142,7 @@ class ST2GSheet:
             print(timestamp + ": Error while generating device list: " + str(err))
             exit(1)
 
-    def getDeviceValues(self, deviceID):
+    def getDeviceValues(self, deviceID, sheetNumber):
         self.send_request_deviceStatus(deviceID)
         self.send_request_deviceName(deviceID)
 
@@ -161,20 +162,32 @@ class ST2GSheet:
                 'timestamp']
             TempValue = self.ST_results02['components']['main']['temperatureMeasurement']['temperature']['value']
 
-            valueSet = [DeviceName, DeviceLabel, HumidityTimestamp, Tempvalue, TempTimestamp, TempValue]
-            self.uploadVales(valueSet)
+            valueSet = [datetime.datetime.now().strftime("%d-%b-%Y (%H:%M:%S)"), DeviceName, DeviceLabel, HumidityTimestamp, Tempvalue, TempTimestamp, TempValue]
+            self.uploadVales(valueSet, sheetNumber)
 
         except Exception as err:
             print(timestamp + ": Error while process device values: " + str(err))
             exit(1)
 
-    def uploadVales(self, valueSet):
+    def uploadVales(self, valueSet, sheetNumber):
         # initiating upload into google sheet
         try:
-            creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+
+            current_path = os.path.dirname(os.path.abspath(__file__))
+
+            creds = ServiceAccountCredentials.from_json_keyfile_name(current_path + "/credentials.json", scope)
             client = gspread.authorize(creds)
-            sheet = client.open("PoolTemp").sheet1  # Open the spreadhseet
-            sheet.insert_row(valueSet, 1)
+            spreadsheet = client.open("PoolTemp")  # Open the spreadhseet
+            if sheetNumber >= len(spreadsheet.worksheets()):
+                spreadsheet.add_worksheet(valueSet[1],5000,7)
+                sheet = spreadsheet.get_worksheet(sheetNumber)
+                sheet.insert_row(["Date","Device","Label","Sensor Date","Humidity","Sensor Date","Temperature"], 1)
+            else:
+                sheet = spreadsheet.get_worksheet(sheetNumber)
+                sheet.update_title(valueSet[1])
+
+            sheet.insert_row(valueSet, 2)
+            sheet.resize(10000)
 
         except Exception as err:
             print(timestamp + ": Error while uploading data into Google Sheet: " + str(err))
@@ -199,13 +212,14 @@ def main():
         sys.tracebacklimit = 0
 
     myST2GSheet = ST2GSheet()
-
+    sheetNumber = 0
     if smartdeviceID == "all":
         myST2GSheet.getAllTempDevices()
         for deviceID in myST2GSheet.TempDevices:
-            myST2GSheet.getDeviceValues(deviceID)
+            myST2GSheet.getDeviceValues(deviceID,sheetNumber)
+            sheetNumber += 1
     else:
-        myST2GSheet.getDeviceValues(smartdeviceID)
+        myST2GSheet.getDeviceValues(smartdeviceID,1)
 
 
 if __name__ == '__main__':
